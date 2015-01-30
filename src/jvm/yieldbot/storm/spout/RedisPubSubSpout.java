@@ -29,7 +29,6 @@ public class RedisPubSubSpout extends BaseRichSpout {
 	final int port;
 	final String pattern;
 	LinkedBlockingQueue<String> queue;
-	JedisPool pool;
 	
 	public RedisPubSubSpout(String host, int port, String pattern) {
 		this.host = host;
@@ -39,12 +38,12 @@ public class RedisPubSubSpout extends BaseRichSpout {
 	
 	class ListenerThread extends Thread {
 		LinkedBlockingQueue<String> queue;
-		JedisPool pool;
+		Jedis jedis;
 		String pattern;
 		
-		public ListenerThread(LinkedBlockingQueue<String> queue, JedisPool pool, String pattern) {
+		public ListenerThread(LinkedBlockingQueue<String> queue, Jedis jedis, String pattern) {
 			this.queue = queue;
-			this.pool = pool;
+			this.jedis = jedis;
 			this.pattern = pattern;
 		}
 		
@@ -86,37 +85,29 @@ public class RedisPubSubSpout extends BaseRichSpout {
 					
 				}
 			};
-			
-			Jedis jedis = pool.getResource();
-			try {
-				jedis.psubscribe(listener, pattern);
-			} finally {
-				pool.returnResource(jedis);
-			}
+			jedis.psubscribe(listener, pattern);
 		}
 	};
 	
 	public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
 		_collector = collector;
 		queue = new LinkedBlockingQueue<String>(1000);
-		pool = new JedisPool(new JedisPoolConfig(),host,port);
+		Jedis jedis = new Jedis(host,port);
 		
-		ListenerThread listener = new ListenerThread(queue,pool,pattern);
+		ListenerThread listener = new ListenerThread(queue,jedis,pattern);
 		listener.start();
 		
 	}
 
-	public void close() {
-		pool.destroy();
-	}
+	public void close() {}
 
 	public void nextTuple() {
 		String ret = queue.poll();
-        if(ret==null) {
-            Utils.sleep(50);
-        } else {
-            _collector.emit(tuple(ret));            
-        }
+        	if(ret==null) {
+            		Utils.sleep(50);
+        	} else {
+            		_collector.emit(tuple(ret));            
+        	}
 	}
 
 	public void ack(Object msgId) {
